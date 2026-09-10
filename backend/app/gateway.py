@@ -1,0 +1,175 @@
+"""The single door every LLM call goes through.
+
+Agents call gateway.stream(...) or gateway.complete(...) with a task type and
+never touch a provider SDK. Provider choice, the daily budget check, fallback,
+cost accounting, and Langfuse tracing all live here so there is exactly one
+place to change any of them.
+
+Second cost safety net, independent of the rate limiter: the rate limiter caps
+how many requests a visitor may make, this caps how much money the providers may
+be given in a day.
+"""
+import logging
+import os
+import time
+from collections.abc import AsyncIterator
+
+import litellm
+
+from . import db
+from .config import DAILY_BUDGET_USD, MAX_TOKENS, MODELS, ROUTING_POLICY
+
+log = logging.getLogger(__name__)
+litellm.suppress_debug_info = True
+# Providers disagree on which optional params they accept (stream_options, for
+# one). Dropping the unsupported ones beats maintaining a per-provider matrix.
+litellm.drop_params = True
+
+NO_KEY = "not configured"
+OVER_BUDGET = "over daily budget"
+
+
+class GatewayError(Exception):
+    """Carries a short code and a message that is safe to show in the UI."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def configure_tracing() -> None:
+    """Register Langfuse as a litellm callback, once, at startup. Every gateway
+    call is then traced with no per-agent instrumentation."""
+    if not (os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY")):
+        log.warning("Langfuse keys unset: calls are not traced")
+        return
+    litellm.success_callback = ["langfuse"]
+    litellm.failure_callback = ["langfuse"]
+    log.info("Langfuse tracing enabled")
+
+
+def _cost_usd(model_name: str, input_tokens: int, output_tokens: int) -> float:
+    spec = MODELS[model_name]
+    return (
+        input_tokens / 1_000_000 * spec["input_usd_per_mtok"]
+        + output_tokens / 1_000_000 * spec["output_usd_per_mtok"]
+    )
+
+
+async def _select(task: str) -> tuple[list[str], dict[str, str]]:
+    """Split the task's model list into (usable, {skipped model: reason})."""
+    candidates = ROUTING_POLICY.get(task)
+    if not candidates:
+        raise GatewayError("unknown_task", f"No routing policy for task type '{task}'.")
+    usable, skipped = [], {}
+    for name in candidates:
+        spec = MODELS[name]
+        if not os.getenv(spec["api_key_env"]):
+            skipped[name] = NO_KEY
+        elif await db.spend_today(spec["provider"]) >= DAILY_BUDGET_USD[spec["provider"]]:
+            skipped[name] = OVER_BUDGET
+        else:
+            usable.append(name)
+    return usable, skipped
+
+
+def _nothing_left(skipped: dict[str, str]) -> GatewayError:
+    if OVER_BUDGET in skipped.values():
+        return GatewayError(
+            "budget_exhausted",
+            "The daily model budget for this demo is spent. Try again tomorrow.",
+        )
+    return GatewayError("no_provider", "No model provider is configured for this task.")
+
+
+async def _log(model_name, *, task, run_id, agent_id, usage, started, fallback, success):
+    spec = MODELS[model_name]
+    input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    output_tokens = getattr(usage, "completion_tokens", 0) or 0
+    await db.record_call(
+        run_id=run_id,
+        agent_id=agent_id,
+        task_type=task,
+        provider=spec["provider"],
+        model=spec["litellm_model"],
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=_cost_usd(model_name, input_tokens, output_tokens),
+        latency_ms=int((time.monotonic() - started) * 1000),
+        fallback_used=fallback,
+        success=success,
+    )
+
+
+async def stream(task: str, messages: list[dict], *, run_id: str, agent_id: str) -> AsyncIterator[dict]:
+    """Yield SSE event dicts: partial_output chunks, plus fallback_triggered
+    whenever a model is passed over. The caller forwards them to the client."""
+    usable, skipped = await _select(task)
+    if not usable:
+        raise _nothing_left(skipped)
+
+    # A model skipped for missing credentials is a deployment fact, not a
+    # runtime fallback, so only budget skips and real failures are narrated.
+    previous = next(
+        (name for name in reversed(list(skipped)) if skipped[name] == OVER_BUDGET), None
+    )
+    reason = OVER_BUDGET if previous else ""
+
+    for attempt, name in enumerate(usable):
+        spec = MODELS[name]
+        if previous:
+            yield {
+                "type": "fallback_triggered",
+                "from_provider": MODELS[previous]["provider"],
+                "to_provider": spec["provider"],
+                "reason": reason,
+            }
+        started, chunks = time.monotonic(), []
+        try:
+            response = await litellm.acompletion(
+                model=spec["litellm_model"],
+                messages=messages,
+                max_tokens=MAX_TOKENS,
+                stream=True,
+                stream_options={"include_usage": True},
+                metadata={
+                    "trace_id": run_id,
+                    "trace_name": f"{agent_id}:{task}",
+                    "generation_name": name,
+                    "tags": [agent_id, task],
+                    "trace_metadata": {"agent_id": agent_id, "task_type": task},
+                },
+            )
+            async for chunk in response:
+                chunks.append(chunk)
+                text = chunk.choices[0].delta.content if chunk.choices else None
+                if text:
+                    yield {"type": "partial_output", "text": text}
+        except Exception as exc:  # noqa: BLE001 - mapped to a safe message below
+            log.exception("provider %s failed", name)
+            if chunks:
+                # ponytail: no mid-stream fallback - the client already has text
+                # from this provider and replaying it under another would duplicate
+                # output. Buffer the whole response before yielding if that changes.
+                raise GatewayError("provider_error", "The model stopped part way through this answer.") from exc
+            previous, reason = name, "provider error"
+            if attempt == len(usable) - 1:
+                raise GatewayError("provider_error", "Every model provider failed for this request.") from exc
+            continue
+
+        built = litellm.stream_chunk_builder(chunks, messages=messages)
+        await _log(
+            name, task=task, run_id=run_id, agent_id=agent_id, usage=built.usage,
+            started=started, fallback=attempt > 0 or bool(previous), success=True,
+        )
+        return
+
+
+async def complete(task: str, messages: list[dict], *, run_id: str, agent_id: str) -> str:
+    """Non-streaming call. Same policy, same accounting, returns the text."""
+    text = []
+    async for event in stream(task, messages, run_id=run_id, agent_id=agent_id):
+        if event["type"] == "partial_output":
+            text.append(event["text"])
+    return "".join(text)
