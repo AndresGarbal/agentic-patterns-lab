@@ -1,4 +1,4 @@
-# AI Agent Lab
+# Agentic Patterns Lab
 
 A public demo site showcasing AI agents built in Python, each chosen to
 demonstrate a specific agentic pattern: prompt chaining, orchestrator-workers,

@@ -86,7 +86,7 @@ export default function Home() {
   return (
     <main className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">AI Agent Lab</h1>
+        <h1 className="text-2xl font-semibold">Agentic Patterns Lab</h1>
         <p className="text-neutral-400">
           Phase 1: one echo agent, proving the path from browser to rate limiter to
           model gateway and back as a live stream.

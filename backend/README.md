@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI service for the AI Agent Lab. Runs the agent graphs, enforces the rate
+FastAPI service for Agentic Patterns Lab. Runs the agent graphs, enforces the rate
 limit and the provider budget, and streams events to the frontend over SSE.
 
 ## Local development

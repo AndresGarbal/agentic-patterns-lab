@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Agent Lab",
+  title: "Agentic Patterns Lab",
   description: "Demo agents, each built to show a specific agentic pattern.",
 };
 

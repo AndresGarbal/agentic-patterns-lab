@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     await db.close()
 
 
-app = FastAPI(title="AI Agent Lab", lifespan=lifespan)
+app = FastAPI(title="Agentic Patterns Lab", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
