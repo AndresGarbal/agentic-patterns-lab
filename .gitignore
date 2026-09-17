@@ -1,14 +1,10 @@
 # Claude Code
 .claude/
-CLAUDE.md
 .mcp.json
 
 # Playwright MCP
 .playwright-mcp/
 playwright-mcp/
-
-# Specs, local only
-docs/
 
 # Environment
 .env

@@ -8,6 +8,13 @@ The frontend is a Next.js app on Vercel. The backend is a FastAPI service on
 Railway, because agent orchestration needs a long-lived process with real
 streaming rather than a serverless function.
 
+## Who built what
+
+The AI agents are designed and written by Andres Garcia: the LangGraph graphs
+(Research, Financial), the MCP finance server, and the prompts. The supporting
+infrastructure (FastAPI routes, rate limiter, LLM gateway, SSE transport, data
+layer, deployment config) and the frontend were built with Claude Code.
+
 ## Status
 
 Phases 1 and 2 are complete: the request path runs end to end with one echo
@@ -29,12 +36,23 @@ agent, across three providers with budget-aware fallback and Langfuse tracing.
 
 ## Running it locally
 
-Backend, from `backend/`:
+Backend, from `backend/` (Python 3.13):
 
+    # Windows
     py -3.13 -m venv .venv
     .venv/Scripts/python.exe -m pip install -r requirements.txt
     cp .env.example .env          # set ANTHROPIC_API_KEY at minimum
     .venv/Scripts/python.exe -m uvicorn app.main:app --reload
+
+    # macOS (install Python first if needed: brew install python@3.13)
+    python3.13 -m venv .venv
+    .venv/bin/python -m pip install -r requirements.txt
+    cp .env.example .env          # set ANTHROPIC_API_KEY at minimum
+    .venv/bin/python -m uvicorn app.main:app --reload
+
+The only difference is the interpreter path: `.venv/Scripts/python.exe` on
+Windows, `.venv/bin/python` on macOS and Linux. Every command in this repo that
+uses the Windows path works on macOS with that substitution.
 
 Frontend, from `frontend/`:
 

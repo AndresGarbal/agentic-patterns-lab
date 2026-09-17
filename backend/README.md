@@ -5,10 +5,21 @@ limit and the provider budget, and streams events to the frontend over SSE.
 
 ## Local development
 
+    # Windows
     py -3.13 -m venv .venv
     .venv/Scripts/python.exe -m pip install -r requirements.txt
     cp .env.example .env          # set ANTHROPIC_API_KEY at minimum
     .venv/Scripts/python.exe -m uvicorn app.main:app --reload
+
+    # macOS (install Python first if needed: brew install python@3.13)
+    python3.13 -m venv .venv
+    .venv/bin/python -m pip install -r requirements.txt
+    cp .env.example .env          # set ANTHROPIC_API_KEY at minimum
+    .venv/bin/python -m uvicorn app.main:app --reload
+
+The only difference is the interpreter path: `.venv/Scripts/python.exe` on
+Windows, `.venv/bin/python` on macOS and Linux. Every command in this repo that
+uses the Windows path works on macOS with that substitution.
 
 Postgres and Redis are optional locally. With `DATABASE_URL` unset the budget
 check passes and calls are not logged; with the Upstash variables unset the rate
