@@ -88,7 +88,7 @@ def test_selection_skips_unconfigured_and_broke_providers():
         with _keys(ANTHROPIC_API_KEY="x", OPENAI_API_KEY="x", GROQ_API_KEY=None):
             usable, skipped = await gateway._select("echo")
             assert usable == ["claude-haiku", "gpt-4o-mini"]
-            assert skipped == {"llama-3.1-8b": gateway.NO_KEY}
+            assert skipped == {"gpt-oss-20b": gateway.NO_KEY}
 
             with _spend({"anthropic": 999.0}):
                 usable, skipped = await gateway._select("echo")

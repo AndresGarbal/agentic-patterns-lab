@@ -73,14 +73,16 @@ provider cost" guarantee, independent of the rate limiter.
 
 ### Functional requirements
 - Built on LiteLLM's `Router`, configured with a named model list for each
-  provider (Anthropic, OpenAI, Groq).
+  provider (Anthropic, OpenAI, Groq). Every task's list ends in a Groq model,
+  so the app runs on Groq alone while the other keys are unset - that is the
+  configuration used during development.
 - Task-to-provider policy (config, not hardcoded):
   ```
   ROUTING_POLICY = {
-      "narrator":            ["groq/llama-3.1-8b", "claude-haiku"],
-      "planning":            ["claude-haiku", "gpt-4o-mini"],
-      "structured_extract":  ["gpt-4o-mini", "claude-haiku"],
-      "verification":        ["claude-haiku", "gpt-4o-mini"],  # called twice in parallel, see Financial agent
+      "narrator":            ["gpt-oss-20b", "claude-haiku"],
+      "planning":            ["claude-haiku", "gpt-4o-mini", "gpt-oss-120b"],
+      "structured_extract":  ["gpt-4o-mini", "claude-haiku", "gpt-oss-120b"],
+      "verification":        ["claude-haiku", "gpt-4o-mini", "gpt-oss-120b", "gpt-oss-20b"],  # called twice in parallel, see Financial agent
   }
   ```
 - Before each call, check the current day's spend for the selected provider

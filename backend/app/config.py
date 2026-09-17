@@ -37,25 +37,38 @@ MODELS = {
         "input_usd_per_mtok": 0.15,
         "output_usd_per_mtok": 0.60,
     },
-    "llama-3.1-8b": {
+    # Groq's Llama models moved to enterprise-only pricing, so the two
+    # self-serve gpt-oss models are what a normal key can reach.
+    "gpt-oss-120b": {
         "provider": "groq",
-        "litellm_model": "groq/llama-3.1-8b-instant",
+        "litellm_model": "groq/openai/gpt-oss-120b",
         "api_key_env": "GROQ_API_KEY",
-        "input_usd_per_mtok": 0.05,
-        "output_usd_per_mtok": 0.08,
+        "input_usd_per_mtok": 0.15,
+        "output_usd_per_mtok": 0.60,
+    },
+    "gpt-oss-20b": {
+        "provider": "groq",
+        "litellm_model": "groq/openai/gpt-oss-20b",
+        "api_key_env": "GROQ_API_KEY",
+        "input_usd_per_mtok": 0.075,
+        "output_usd_per_mtok": 0.30,
     },
 }
 
 # Task type -> ordered model preference. The gateway walks this list and skips
 # any model that is unconfigured or whose provider is over budget, so the order
 # is both a quality preference and a fallback chain.
+# Every list ends in a Groq model, so with only GROQ_API_KEY set the gateway
+# skips the unconfigured entries and the whole app still runs on Groq alone.
 ROUTING_POLICY = {
-    "echo": ["claude-haiku", "gpt-4o-mini", "llama-3.1-8b"],
-    "planning": ["claude-haiku", "gpt-4o-mini"],
-    "structured_extract": ["gpt-4o-mini", "claude-haiku"],
-    "verification": ["claude-haiku", "gpt-4o-mini"],  # called twice in parallel by the Financial agent
-    "narrator": ["llama-3.1-8b", "claude-haiku"],
-    "routing": ["llama-3.1-8b", "claude-haiku"],
+    "echo": ["claude-haiku", "gpt-4o-mini", "gpt-oss-20b"],
+    "planning": ["claude-haiku", "gpt-4o-mini", "gpt-oss-120b"],
+    "structured_extract": ["gpt-4o-mini", "claude-haiku", "gpt-oss-120b"],
+    # Called twice in parallel by the Financial agent, so the two entries must
+    # be different models for the agreement check to mean anything.
+    "verification": ["claude-haiku", "gpt-4o-mini", "gpt-oss-120b", "gpt-oss-20b"],
+    "narrator": ["gpt-oss-20b", "claude-haiku"],
+    "routing": ["gpt-oss-20b", "claude-haiku"],
 }
 
 DAILY_BUDGET_USD = {
