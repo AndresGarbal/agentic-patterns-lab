@@ -18,9 +18,16 @@ async def connect() -> None:
     if not url:
         log.warning("DATABASE_URL unset: budget checks pass and calls are not logged")
         return
-    _pool = await asyncpg.create_pool(url, min_size=1, max_size=5)
-    async with _pool.acquire() as conn:
-        await conn.execute(_SCHEMA.read_text())
+    try:
+        _pool = await asyncpg.create_pool(url, min_size=1, max_size=5)
+        async with _pool.acquire() as conn:
+            await conn.execute(_SCHEMA.read_text())
+    except Exception:
+        # A database that is misconfigured or down must not take the whole API
+        # with it: degrade to the same no-op mode as an unset DATABASE_URL, and
+        # make the reason loud in the logs.
+        _pool = None
+        log.exception("DATABASE_URL set but unusable: running without budget checks or call logs")
 
 
 async def close() -> None:
