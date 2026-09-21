@@ -123,11 +123,8 @@ async def stream_run(agent_id: str, run_id: str):
         # the question and the final answer rather than the first LLM call's.
         try:
             with gateway.observe(
-                as_type="agent",
-                name=agent_id,
-                input=run["input"],
-                metadata={"run_id": run_id},
-            ) as span:
+                as_type="agent", name=agent_id, input=run["input"]
+            ) as span, gateway.trace_attributes(metadata={"run_id": run_id}):
                 async for event in AGENT_RUNNERS[agent_id](run_id, run["input"]):
                     if event["type"] == "run_complete":
                         span.update(output=event["result"])

@@ -68,6 +68,17 @@ def shutdown_tracing() -> None:
         _langfuse.shutdown()
 
 
+def trace_attributes(**kwargs):
+    """Attach attributes (metadata, tags, session_id, ...) to the whole trace
+    rather than to one observation, so the traces table can be filtered by
+    them. Use inside the observation that opens the trace."""
+    if _langfuse is None:
+        return contextlib.nullcontext()
+    from langfuse import propagate_attributes
+
+    return propagate_attributes(**kwargs)
+
+
 def observe(**kwargs):
     """One Langfuse observation, nested under whatever observation is active,
     or a no-op when tracing is off. Agents use this for their own nodes and

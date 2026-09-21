@@ -254,8 +254,9 @@ without building one from scratch.
   trace output is the final result. Every generation, node and tool call
   nests under it through `gateway.observe(...)`, which is a no-op when the
   Langfuse keys are unset.
-- Carry `run_id` in the run span's metadata, so a trace can be matched to
-  its rows in `call_logs`.
+- Carry `run_id` in the trace's metadata (via `gateway.trace_attributes`,
+  not on the span itself), so the traces table can be filtered by it and a
+  trace can be matched to its rows in `call_logs`.
 - Optional stretch: a small `/stats` endpoint in the backend that reads
   aggregated numbers back out (via Langfuse's API or directly from the
   `provider_spend` Postgres table) to show on an "about this project" page,
