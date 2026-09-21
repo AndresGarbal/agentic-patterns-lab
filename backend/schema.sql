@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS provider_spend (
     id BIGSERIAL PRIMARY KEY,
     provider TEXT NOT NULL,
     day DATE NOT NULL,
-    spend_usd NUMERIC(10, 4) NOT NULL DEFAULT 0,
+    spend_usd NUMERIC(14, 8) NOT NULL DEFAULT 0,
     UNIQUE (provider, day)
 );
 
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS call_logs (
     model TEXT NOT NULL,
     input_tokens INT,
     output_tokens INT,
-    cost_usd NUMERIC(10, 6),
+    cost_usd NUMERIC(14, 8),
     latency_ms INT,
     fallback_used BOOLEAN NOT NULL DEFAULT FALSE,
     success BOOLEAN NOT NULL,
@@ -26,3 +26,10 @@ CREATE TABLE IF NOT EXISTS call_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_call_logs_agent ON call_logs (agent_id, created_at);
+
+-- Widen the money columns on databases created before the precision fix. A
+-- single call to a cheap model costs ~0.00002 USD, which rounded to 0.0000 at
+-- the old NUMERIC(10, 4) scale, so the daily spend never moved off zero and the
+-- budget cap never tripped. Both tables are small, so the rewrite is cheap.
+ALTER TABLE provider_spend ALTER COLUMN spend_usd TYPE NUMERIC(14, 8);
+ALTER TABLE call_logs ALTER COLUMN cost_usd TYPE NUMERIC(14, 8);

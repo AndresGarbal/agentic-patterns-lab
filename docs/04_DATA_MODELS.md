@@ -11,7 +11,7 @@ CREATE TABLE provider_spend (
     id BIGSERIAL PRIMARY KEY,
     provider TEXT NOT NULL,           -- 'anthropic' | 'openai' | 'groq'
     day DATE NOT NULL,
-    spend_usd NUMERIC(10, 4) NOT NULL DEFAULT 0,
+    spend_usd NUMERIC(14, 8) NOT NULL DEFAULT 0,
     UNIQUE (provider, day)
 );
 ```
@@ -35,7 +35,7 @@ CREATE TABLE call_logs (
     model TEXT NOT NULL,
     input_tokens INT,
     output_tokens INT,
-    cost_usd NUMERIC(10, 6),
+    cost_usd NUMERIC(14, 8),
     latency_ms INT,
     fallback_used BOOLEAN NOT NULL DEFAULT FALSE,
     success BOOLEAN NOT NULL,
