@@ -43,6 +43,9 @@ them.
   fallback, and Langfuse tracing happen in exactly one place.
 - The rate limiter and the per-provider budget tracker are two independent cost
   safety nets. Do not merge them.
+- Only the gateway imports `langfuse`. Agent code traces its own nodes and tool
+  calls with `gateway.observe(as_type=..., name=...)`, which nests under the
+  run's trace and is a no-op when the Langfuse keys are unset.
 - Never forward a raw provider error or stack trace to the frontend. Map known
   failure modes to `{"error": "<short_code>", "message": "<safe text>"}` before
   the response reaches the API boundary.

@@ -30,6 +30,12 @@ async def connect() -> None:
         log.exception("DATABASE_URL set but unusable: running without budget checks or call logs")
 
 
+def connected() -> bool:
+    """False when DATABASE_URL is unset or the pool failed to come up. /health
+    reports it, so a silent degrade is visible without reading startup logs."""
+    return _pool is not None
+
+
 async def close() -> None:
     if _pool:
         await _pool.close()

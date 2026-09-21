@@ -23,7 +23,7 @@ from app import db, gateway, main, rate_limit  # noqa: E402
 # --- API surface -----------------------------------------------------------
 
 def test_basics(client):
-    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/health").json() == {"status": "ok", "db": False}
     assert [a["id"] for a in client.get("/agents").json()["agents"]] == ["echo"]
     assert client.post("/agents/nope/run", json={"input": {"question": "hi"}}).status_code == 404
 
@@ -169,7 +169,9 @@ def _chunks(texts):
 
 def _usage(chunks, messages=None):
     usage = types.SimpleNamespace(prompt_tokens=11, completion_tokens=7)
-    return types.SimpleNamespace(usage=usage)
+    text = "".join(c.choices[0].delta.content for c in chunks)
+    message = types.SimpleNamespace(content=text)
+    return types.SimpleNamespace(usage=usage, choices=[types.SimpleNamespace(message=message)])
 
 
 def _recorder(sink):

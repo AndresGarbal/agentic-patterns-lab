@@ -9,6 +9,7 @@ Second cost safety net, independent of the rate limiter: the rate limiter caps
 how many requests a visitor may make, this caps how much money the providers may
 be given in a day.
 """
+import contextlib
 import logging
 import os
 import time
@@ -28,6 +29,8 @@ litellm.drop_params = True
 NO_KEY = "not configured"
 OVER_BUDGET = "over daily budget"
 
+_langfuse = None
+
 
 class GatewayError(Exception):
     """Carries a short code and a message that is safe to show in the UI."""
@@ -38,15 +41,40 @@ class GatewayError(Exception):
         self.message = message
 
 
+class _NoSpan:
+    """Stands in for a Langfuse span when tracing is off, so every caller can
+    update its span unconditionally."""
+
+    def update(self, **_):
+        pass
+
+
 def configure_tracing() -> None:
-    """Register Langfuse as a litellm callback, once, at startup. Every gateway
-    call is then traced with no per-agent instrumentation."""
+    """Start the Langfuse client, once, at startup. Nothing else in the app
+    imports langfuse: observations are opened through observe() below."""
+    global _langfuse
     if not (os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY")):
         log.warning("Langfuse keys unset: calls are not traced")
         return
-    litellm.success_callback = ["langfuse"]
-    litellm.failure_callback = ["langfuse"]
+    from langfuse import get_client
+
+    _langfuse = get_client()
     log.info("Langfuse tracing enabled")
+
+
+def shutdown_tracing() -> None:
+    """Flush pending spans. Without it the last run of a deploy is lost."""
+    if _langfuse:
+        _langfuse.shutdown()
+
+
+def observe(**kwargs):
+    """One Langfuse observation, nested under whatever observation is active,
+    or a no-op when tracing is off. Agents use this for their own nodes and
+    tool calls; every LLM call is already covered by stream() below."""
+    if _langfuse is None:
+        return contextlib.nullcontext(_NoSpan())
+    return _langfuse.start_as_current_observation(**kwargs)
 
 
 def _cost_usd(model_name: str, input_tokens: int, output_tokens: int) -> float:
@@ -83,10 +111,17 @@ def _nothing_left(skipped: dict[str, str]) -> GatewayError:
     return GatewayError("no_provider", "No model provider is configured for this task.")
 
 
-async def _log(model_name, *, task, run_id, agent_id, usage, started, fallback, success):
+async def _log(model_name, *, task, run_id, agent_id, usage, started, fallback, success, span):
+    """Record one call in both places: the generation span in Langfuse, and
+    call_logs plus the budget counter in Postgres."""
     spec = MODELS[model_name]
     input_tokens = getattr(usage, "prompt_tokens", 0) or 0
     output_tokens = getattr(usage, "completion_tokens", 0) or 0
+    span.update(
+        usage_details={"input": input_tokens, "output": output_tokens},
+        cost_details={"total": _cost_usd(model_name, input_tokens, output_tokens)},
+        metadata={"provider": spec["provider"], "fallback_used": fallback},
+    )
     await db.record_call(
         run_id=run_id,
         agent_id=agent_id,
@@ -126,44 +161,45 @@ async def stream(task: str, messages: list[dict], *, run_id: str, agent_id: str)
                 "reason": reason,
             }
         started, chunks = time.monotonic(), []
-        try:
-            response = await litellm.acompletion(
-                model=spec["litellm_model"],
-                messages=messages,
-                max_tokens=MAX_TOKENS,
-                stream=True,
-                stream_options={"include_usage": True},
-                metadata={
-                    "trace_id": run_id,
-                    "trace_name": f"{agent_id}:{task}",
-                    "generation_name": name,
-                    "tags": [agent_id, task],
-                    "trace_metadata": {"agent_id": agent_id, "task_type": task},
-                },
-            )
-            async for chunk in response:
-                chunks.append(chunk)
-                text = chunk.choices[0].delta.content if chunk.choices else None
-                if text:
-                    yield {"type": "partial_output", "text": text}
-        except Exception as exc:  # noqa: BLE001 - mapped to a safe message below
-            log.exception("provider %s failed", name)
-            if chunks:
-                # ponytail: no mid-stream fallback - the client already has text
-                # from this provider and replaying it under another would duplicate
-                # output. Buffer the whole response before yielding if that changes.
-                raise GatewayError("provider_error", "The model stopped part way through this answer.") from exc
-            previous, reason = name, "provider error"
-            if attempt == len(usable) - 1:
-                raise GatewayError("provider_error", "Every model provider failed for this request.") from exc
-            continue
+        # One generation per attempt, so a fallback shows up as two siblings in
+        # the trace: the model that failed and the one that answered.
+        with observe(
+            as_type="generation", name=name, model=spec["litellm_model"], input=messages
+        ) as span:
+            try:
+                response = await litellm.acompletion(
+                    model=spec["litellm_model"],
+                    messages=messages,
+                    max_tokens=MAX_TOKENS,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                )
+                async for chunk in response:
+                    chunks.append(chunk)
+                    text = chunk.choices[0].delta.content if chunk.choices else None
+                    if text:
+                        yield {"type": "partial_output", "text": text}
+            except Exception as exc:  # noqa: BLE001 - mapped to a safe message below
+                log.exception("provider %s failed", name)
+                span.update(level="ERROR", status_message=str(exc)[:500])
+                if chunks:
+                    # ponytail: no mid-stream fallback - the client already has text
+                    # from this provider and replaying it under another would duplicate
+                    # output. Buffer the whole response before yielding if that changes.
+                    raise GatewayError("provider_error", "The model stopped part way through this answer.") from exc
+                previous, reason = name, "provider error"
+                if attempt == len(usable) - 1:
+                    raise GatewayError("provider_error", "Every model provider failed for this request.") from exc
+                continue
 
-        built = litellm.stream_chunk_builder(chunks, messages=messages)
-        await _log(
-            name, task=task, run_id=run_id, agent_id=agent_id, usage=built.usage,
-            started=started, fallback=attempt > 0 or bool(previous), success=True,
-        )
-        return
+            built = litellm.stream_chunk_builder(chunks, messages=messages)
+            span.update(output=built.choices[0].message.content if built.choices else "")
+            await _log(
+                name, task=task, run_id=run_id, agent_id=agent_id, usage=built.usage,
+                started=started, fallback=attempt > 0 or bool(previous), success=True,
+                span=span,
+            )
+            return
 
 
 async def complete(task: str, messages: list[dict], *, run_id: str, agent_id: str) -> str:

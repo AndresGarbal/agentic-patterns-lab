@@ -92,12 +92,16 @@ provider cost" guarantee, independent of the rate limiter.
   surface, do not fail silently.
 - After each call, record actual token usage and cost (from the provider's
   response) into the `provider_spend` table.
-- Register the Langfuse callback so every call is traced automatically:
+- Open a Langfuse generation around each call, so the trace carries the
+  model, the messages, the token usage and the cost the gateway already
+  computes:
   ```python
-  import litellm
-  litellm.success_callback = ["langfuse"]
-  litellm.failure_callback = ["langfuse"]
+  with observe(as_type="generation", name=model_name, model=..., input=messages) as span:
+      ...
+      span.update(output=..., usage_details=..., cost_details=...)
   ```
+  A failed attempt keeps its own generation, marked `level="ERROR"`, so a
+  fallback reads as two siblings in the trace.
 - Fallback also triggers on provider error or timeout, not only budget.
 
 ### Non-functional requirements
@@ -243,10 +247,15 @@ without building one from scratch.
 
 ### Functional requirements
 - Langfuse Cloud free tier, one project for the whole app.
-- LiteLLM success/failure callbacks registered globally in the gateway
-  module (see section 3) - no manual instrumentation needed per agent.
-- Tag each trace with `agent_id` and `task_type` metadata so the Langfuse
-  dashboard can be filtered per agent.
+- Langfuse Python SDK v4, started once at startup by the gateway (see
+  section 3) and flushed on shutdown. No other module imports `langfuse`.
+- One trace per agent run, opened in the API layer around the SSE generator
+  and named after the agent, so the trace input is the question and the
+  trace output is the final result. Every generation, node and tool call
+  nests under it through `gateway.observe(...)`, which is a no-op when the
+  Langfuse keys are unset.
+- Carry `run_id` in the run span's metadata, so a trace can be matched to
+  its rows in `call_logs`.
 - Optional stretch: a small `/stats` endpoint in the backend that reads
   aggregated numbers back out (via Langfuse's API or directly from the
   `provider_spend` Postgres table) to show on an "about this project" page,

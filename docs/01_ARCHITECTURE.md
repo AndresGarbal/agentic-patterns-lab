@@ -30,7 +30,8 @@
    gateway, which checks the per-provider budget, picks a provider per the
    routing policy, and falls back to the next provider on error or budget
    exhaustion.
-6. Every gateway call is also reported to Langfuse via the LiteLLM callback.
+6. Every gateway call is also a Langfuse generation, nested under the run's
+   trace (opened per run in the API layer, see `02_MODULE_REQUIREMENTS.md`).
 7. As the graph runs, it emits structured events over SSE. The frontend's
    narrator widget consumes this stream and renders commentary live.
 8. The final result streams back to the agent page's output panel.
@@ -47,7 +48,7 @@
 | Vector store        | Postgres + pgvector extension    | Same database as everything else, no separate service |
 | Relational store    | Postgres (Railway managed)       | Budgets, call logs |
 | Rate limit store    | Redis (Upstash, serverless-friendly) | Atomic INCR with TTL |
-| Observability       | Langfuse Cloud (free tier)       | Fed automatically via LiteLLM callback |
+| Observability       | Langfuse Cloud (free tier)       | Langfuse Python SDK v4, called only by the gateway |
 | MCP server          | Python `mcp` SDK                 | Exposes finance tools |
 | Streaming transport | Server-Sent Events (SSE)         | Simpler than WebSockets for one-directional agent-to-UI updates |
 

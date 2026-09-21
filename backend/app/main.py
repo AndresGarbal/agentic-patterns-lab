@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     gateway.configure_tracing()
     yield
     await rate_limit.shutdown()
+    gateway.shutdown_tracing()
     await db.close()
 
 
@@ -57,7 +58,7 @@ def error(code: str, message: str, status: int, **extra) -> JSONResponse:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "db": db.connected()}
 
 
 @app.get("/agents")
@@ -117,9 +118,20 @@ async def stream_run(agent_id: str, run_id: str):
         return error("unknown_run", "This run has expired or was already streamed.", 404)
 
     async def events():
+        # One Langfuse trace per run: every generation, node and tool call the
+        # agent opens nests under this span, and the trace's input/output are
+        # the question and the final answer rather than the first LLM call's.
         try:
-            async for event in AGENT_RUNNERS[agent_id](run_id, run["input"]):
-                yield sse(event, run_id)
+            with gateway.observe(
+                as_type="agent",
+                name=agent_id,
+                input=run["input"],
+                metadata={"run_id": run_id},
+            ) as span:
+                async for event in AGENT_RUNNERS[agent_id](run_id, run["input"]):
+                    if event["type"] == "run_complete":
+                        span.update(output=event["result"])
+                    yield sse(event, run_id)
         except gateway.GatewayError as exc:
             yield sse({"type": "error", "message": exc.message}, run_id)
         except asyncio.CancelledError:
