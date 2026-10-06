@@ -6,6 +6,7 @@ import os
 import pathlib
 
 import asyncpg
+from pgvector.asyncpg import register_vector
 
 log = logging.getLogger(__name__)
 _pool: asyncpg.Pool | None = None
@@ -19,9 +20,15 @@ async def connect() -> None:
         log.warning("DATABASE_URL unset: budget checks pass and calls are not logged")
         return
     try:
-        _pool = await asyncpg.create_pool(url, min_size=1, max_size=5)
-        async with _pool.acquire() as conn:
+        # The schema runs on a standalone connection before the pool exists:
+        # the pool's init registers the pgvector codec, which needs the
+        # vector extension that schema.sql creates.
+        conn = await asyncpg.connect(url)
+        try:
             await conn.execute(_SCHEMA.read_text())
+        finally:
+            await conn.close()
+        _pool = await asyncpg.create_pool(url, min_size=1, max_size=5, init=register_vector)
     except Exception:
         # A database that is misconfigured or down must not take the whole API
         # with it: degrade to the same no-op mode as an unset DATABASE_URL, and
@@ -81,3 +88,32 @@ async def record_call(**call) -> None:
             call["fallback_used"],
             call["success"],
         )
+
+
+async def save_chunks(run_id: str, chunks: list[dict]) -> None:
+    """Store a run's embedded chunks so the Critic and Writer nodes can retrieve them."""
+    if not _pool or not chunks:
+        return
+    args = [(run_id, item["source_url"], item["chunk_text"], item["embedding"]) for item in chunks]
+    async with _pool.acquire() as conn, conn.transaction():
+        await conn.executemany(
+            """INSERT INTO rag_documents (run_id, source_url, chunk_text, embedding)
+                VALUES ($1,$2,$3,$4)""",
+            args
+        )
+
+
+async def search_chunks(run_id: str, query_embedding: list[float], k: int) -> list[dict]:
+    """Return up to k of the run's chunks closest to the query embedding, closest first."""
+    if not _pool:
+        return []
+    rows = await _pool.fetch(
+        """SELECT source_url, chunk_text, embedding <=> $2 AS distance
+            FROM rag_documents
+            WHERE run_id = $1
+            ORDER BY distance
+            LIMIT $3""",
+            run_id, query_embedding, k
+    )
+    result=[dict(row) for row in rows]
+    return  result

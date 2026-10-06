@@ -220,3 +220,34 @@ async def complete(task: str, messages: list[dict], *, run_id: str, agent_id: st
         if event["type"] == "partial_output":
             text.append(event["text"])
     return "".join(text)
+
+async def embed(texts: list[str], *, run_id: str, agent_id: str) -> list[list[float]]:
+    """One vector per text, in the same order. Unlike stream(), there is no
+    fallback: vectors from different models are not comparable, so a second
+    model would silently corrupt retrieval."""
+    if not texts:
+        return []
+    usable, skipped = await _select("embedding")
+    if not usable:
+        raise _nothing_left(skipped)
+    name = usable[0]
+    spec = MODELS[name]
+    started = time.monotonic()
+    with observe(
+        as_type="embedding", name=name, model=spec["litellm_model"], input={"count": len(texts)}
+    ) as span:
+        try:
+            response = await litellm.aembedding(model=spec["litellm_model"], input=texts)
+        except Exception as exc:  # noqa: BLE001 - mapped to a safe message below
+            log.exception("provider %s failed", name)
+            span.update(level="ERROR", status_message=str(exc)[:500])
+            raise GatewayError(
+                "provider_error", "The embedding provider failed for this request."
+            ) from exc
+        ordered = sorted(response.data, key=lambda item: item["index"])
+        vectors = [item["embedding"] for item in ordered]
+        await _log(
+            name, task="embedding", run_id=run_id, agent_id=agent_id, usage=response.usage,
+            started=started, fallback=False, success=True, span=span,
+        )
+    return vectors

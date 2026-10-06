@@ -14,7 +14,7 @@
 | MCP finance server  | Exposes finance data tools over MCP                               | Railway (own process) or same service |
 | Narrator engine     | Turns the LangGraph event trace into plain-English commentary     | Backend       |
 | Observability        | Traces and cost, fed by the gateway                               | Langfuse Cloud (free tier) |
-| Postgres             | Provider budget state, call logs, pgvector documents              | Railway managed Postgres |
+| Postgres             | Provider budget state, call logs, pgvector documents              | Supabase Postgres |
 | Redis                | Rate limit counters                                                | Upstash (free tier) |
 
 ## Data flow (summary)
@@ -46,7 +46,7 @@
 | LLM gateway         | LiteLLM (Router)                 | Unified client, fallback chains, budget hooks |
 | LLM providers       | Anthropic (Claude), OpenAI (GPT-4o-mini), Groq | Routed by task type, see `02_MODULE_REQUIREMENTS.md` |
 | Vector store        | Postgres + pgvector extension    | Same database as everything else, no separate service |
-| Relational store    | Postgres (Railway managed)       | Budgets, call logs |
+| Relational store    | Postgres (Supabase)              | Budgets, call logs |
 | Rate limit store    | Redis (Upstash, serverless-friendly) | Atomic INCR with TTL |
 | Observability       | Langfuse Cloud (free tier)       | Langfuse Python SDK v4, called only by the gateway |
 | MCP server          | Python `mcp` SDK                 | Exposes finance tools |
@@ -64,7 +64,7 @@ NEXT_PUBLIC_BACKEND_URL=https://<railway-app>.up.railway.app
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 GROQ_API_KEY=
-DATABASE_URL=                 (Railway Postgres, pgvector enabled)
+DATABASE_URL=                 (Supabase Postgres, pgvector enabled)
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 LANGFUSE_PUBLIC_KEY=

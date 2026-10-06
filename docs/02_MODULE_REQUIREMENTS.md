@@ -73,9 +73,11 @@ provider cost" guarantee, independent of the rate limiter.
 
 ### Functional requirements
 - Built on LiteLLM's `Router`, configured with a named model list for each
-  provider (Anthropic, OpenAI, Groq). Every task's list ends in a Groq model,
-  so the app runs on Groq alone while the other keys are unset - that is the
-  configuration used during development.
+  provider (Anthropic, OpenAI, Groq). Every chat task's list ends in a Groq
+  model, so the app runs on Groq alone while the other keys are unset - that
+  is the configuration used during development. The exception is
+  `embedding`: neither Groq nor Anthropic offers embeddings, so the Research
+  agent's RAG needs `OPENAI_API_KEY`.
 - Task-to-provider policy (config, not hardcoded):
   ```
   ROUTING_POLICY = {
@@ -83,8 +85,15 @@ provider cost" guarantee, independent of the rate limiter.
       "planning":            ["claude-haiku", "gpt-4o-mini", "gpt-oss-120b"],
       "structured_extract":  ["gpt-4o-mini", "claude-haiku", "gpt-oss-120b"],
       "verification":        ["claude-haiku", "gpt-4o-mini", "gpt-oss-120b", "gpt-oss-20b"],  # called twice in parallel, see Financial agent
+      "embedding":           ["text-embedding-3-small"],  # one model on purpose, see below
   }
   ```
+- Embeddings go through `gateway.embed(texts, run_id=..., agent_id=...)`,
+  which returns one 1536-dimension vector per text, in input order, and is
+  budgeted, logged and traced (`as_type="embedding"`) like any other call.
+  It has no fallback: vectors from different embedding models are not
+  comparable, so a second model between storing chunks and searching them
+  would return wrong rankings without raising an error.
 - Before each call, check the current day's spend for the selected provider
   against its budget cap (stored in Postgres, see `04_DATA_MODELS.md`). If
   over budget, skip to the next provider in that task's list. If all

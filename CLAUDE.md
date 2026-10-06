@@ -24,14 +24,16 @@ them.
 
 ## Division of work
 
-- Claude builds the frontend UI and all non-agent backend code: FastAPI app and
-  routes, rate limiter, LLM gateway, SSE transport, Postgres/Redis data layer,
-  narrator plumbing, deployment config.
-- Andres builds the AI agents: the LangGraph graphs (Research, Financial), the
-  MCP finance server, and the prompts. Do not hand him finished code for those
-  parts; act as a reviewer and pair on the design. Leave clearly marked
-  seams where his agent code plugs into the infrastructure, explain the pattern
-  and the trade-offs, and let him write the graph internals.
+- Andres owns the backend from Phase 3 on: data layer, gateway, tool clients,
+  agent wiring, the LangGraph graphs, the MCP finance server and the prompts.
+  Phases 1 and 2 predate this split, which is why the existing backend modules
+  were not written by him.
+- Claude works as the reviewer and design partner on that code, and does not
+  hand over finished implementations. Proposals go one step at a time, in
+  dependency order: what the piece must do, the contract it has to satisfy, the
+  decisions it forces and their trade-offs. Review the implementation that comes
+  back against the spec in `docs/`.
+- Claude builds the frontend UI and the deployment config.
 - Andres is the only one who commits. Never run `git commit` or `git push`.
 
 ## Conventions

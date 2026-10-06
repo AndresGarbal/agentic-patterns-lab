@@ -53,13 +53,22 @@ MODELS = {
         "input_usd_per_mtok": 0.075,
         "output_usd_per_mtok": 0.30,
     },
+    "text-embedding-3-small": {
+        "provider": "openai",
+        "litellm_model": "openai/text-embedding-3-small",
+        "api_key_env": "OPENAI_API_KEY",
+        "input_usd_per_mtok": 0.02,
+        "output_usd_per_mtok": 0.0,
+    },
 }
 
 # Task type -> ordered model preference. The gateway walks this list and skips
 # any model that is unconfigured or whose provider is over budget, so the order
 # is both a quality preference and a fallback chain.
-# Every list ends in a Groq model, so with only GROQ_API_KEY set the gateway
+# Every chat list ends in a Groq model, so with only GROQ_API_KEY set the gateway
 # skips the unconfigured entries and the whole app still runs on Groq alone.
+# The exception is embedding: neither Groq nor Anthropic offers embeddings, so
+# the Research agent's RAG needs OPENAI_API_KEY.
 ROUTING_POLICY = {
     "echo": ["claude-haiku", "gpt-4o-mini", "gpt-oss-20b"],
     "planning": ["claude-haiku", "gpt-4o-mini", "gpt-oss-120b"],
@@ -69,6 +78,11 @@ ROUTING_POLICY = {
     "verification": ["claude-haiku", "gpt-4o-mini", "gpt-oss-120b", "gpt-oss-20b"],
     "narrator": ["gpt-oss-20b", "claude-haiku"],
     "routing": ["gpt-oss-20b", "claude-haiku"],
+    # One model on purpose: vectors from different embedding models are not
+    # comparable, so a fallback between storing chunks and searching them would
+    # return nonsense rankings without any error. It must output 1536
+    # dimensions to match rag_documents.embedding.
+    "embedding": ["text-embedding-3-small"],
 }
 
 DAILY_BUDGET_USD = {
