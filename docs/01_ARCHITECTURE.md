@@ -70,7 +70,7 @@ UPSTASH_REDIS_REST_TOKEN=
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 LANGFUSE_HOST=https://cloud.langfuse.com
-TAVILY_API_KEY=                (or Firecrawl, for the Researcher's web search tool)
+EXA_API_KEY=                   (Exa search, the Researcher's web search tool)
 MCP_FINANCE_SERVER_URL=        (if run as a separate process/service)
 ```
 

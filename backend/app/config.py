@@ -96,3 +96,11 @@ CORS_ORIGINS = [
 ]
 
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "2048"))
+
+# Web search (Exa). Bounds the cost of one Researcher pass: pages per
+# sub-question, and characters kept per page before chunking.
+WEB_SEARCH = {
+    "num_results": 5,
+    "max_chars_per_page": 15000,
+    "timeout_s": 20,
+}

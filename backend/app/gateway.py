@@ -238,7 +238,7 @@ async def embed(texts: list[str], *, run_id: str, agent_id: str) -> list[list[fl
     ) as span:
         try:
             response = await litellm.aembedding(model=spec["litellm_model"], input=texts)
-        except Exception as exc:  # noqa: BLE001 - mapped to a safe message below
+        except Exception as exc:
             log.exception("provider %s failed", name)
             span.update(level="ERROR", status_message=str(exc)[:500])
             raise GatewayError(

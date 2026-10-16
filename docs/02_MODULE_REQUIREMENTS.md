@@ -157,7 +157,14 @@ Planner -> Researcher (parallel sub-queries) -> Critic -> Writer
   Gateway task type: `"planning"`.
 - **Researcher** node: runs all sub-questions concurrently with
   `asyncio.gather`, each sub-question hitting the web search tool
-  (Tavily or Firecrawl). This is the parallelization (sectioning) pattern.
+  (Exa `/search`). This is the parallelization (sectioning) pattern.
+- The tool lives in `app/web_search.py` and returns `{url, title, content}`
+  dicts, so the graph never sees the provider's response shape. It asks Exa
+  for full page text capped at a configured character limit (not
+  highlights), because chunking, embedding and retrieval are done here: that
+  is the RAG pattern the agent demonstrates. Exa was picked over Tavily and
+  Firecrawl for a free tier with no card and enough concurrency for the
+  parallel sub-queries.
 - After fetching, each source is chunked, embedded, and upserted into the
   `rag_documents` table (pgvector). Raw scraped text is not kept in the
   LangGraph state past this point - only embeddings and short metadata are.

@@ -28,7 +28,7 @@ the next, so the project is never in a broken state for long.
 
 ## Phase 3 - Research agent
 - Build the LangGraph graph: Planner -> Researcher -> Critic -> Writer.
-- Wire the Researcher's web search tool (Tavily or Firecrawl).
+- Wire the Researcher's web search tool (Exa).
 - Add `rag_documents` table, embed sources, retrieve in Critic/Writer.
 - Add SSE event emission at each node transition and tool call.
 - Build the `/research` frontend page and shared `AgentRunner` component.
